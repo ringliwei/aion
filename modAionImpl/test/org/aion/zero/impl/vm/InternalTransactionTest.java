@@ -498,7 +498,7 @@ public class InternalTransactionTest {
                         false);
 
 
-        cache.flush();
+        cache.flushTo(bc.getRepository(), true);
         return summary;
     }
 }
