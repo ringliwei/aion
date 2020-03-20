@@ -16,5 +16,4 @@ module aion.mcf {
 
     exports org.aion.mcf.blockchain;
     exports org.aion.mcf.db;
-    exports org.aion.mcf.db.exception;
 }
