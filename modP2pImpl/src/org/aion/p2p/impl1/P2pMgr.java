@@ -163,7 +163,7 @@ public final class P2pMgr implements IP2pMgr {
         try {
             selector = Selector.open();
 
-            scheduledWorkers = Executors.newScheduledThreadPool(3);
+            scheduledWorkers = Executors.newScheduledThreadPool(4);
 
             tcpServer = ServerSocketChannel.open();
             tcpServer.configureBlocking(false);
@@ -286,11 +286,15 @@ public final class P2pMgr implements IP2pMgr {
     }
 
     @Override
-    public void send(int _nodeIdHash, String _nodeIdShort, final Msg _msg) {
+    public void send(int nodeIdHash, String nodeIdShort, final Msg msg) {
+        send(nodeIdHash, nodeIdShort, msg, Dest.ACTIVE);
+    }
+
+    public void send(int nodeId, String nodeDisplayId, final Msg message, Dest peerList) {
         try {
-            boolean added = sendMsgQue.offer(new MsgOut(_nodeIdHash, _nodeIdShort, _msg, Dest.ACTIVE), OFFER_TIMEOUT, TimeUnit.MILLISECONDS);
+            boolean added = sendMsgQue.offer(new MsgOut(nodeId, nodeDisplayId, message, peerList), OFFER_TIMEOUT, TimeUnit.MILLISECONDS);
             if (!added) {
-                p2pLOG.warn("Message not added to the send queue due to exceeded capacity: msg={} for node={}", _msg, _nodeIdShort);
+                p2pLOG.warn("Message not added to the send queue due to exceeded capacity: msg={} for node={}", message, nodeDisplayId);
             }
         } catch (InterruptedException e) {
             p2pLOG.error("Interrupted while attempting to add the message to send to the processing queue:", e);
@@ -494,7 +498,6 @@ public final class P2pMgr implements IP2pMgr {
                 this.nodeMgr,
                 this.maxActiveNodes,
                 this.selector,
-                this.sendMsgQue,
                 cachedReqHandshake1);
     }
 
