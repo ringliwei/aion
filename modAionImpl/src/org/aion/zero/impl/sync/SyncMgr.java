@@ -1,5 +1,6 @@
 package org.aion.zero.impl.sync;
 
+import static org.aion.base.ConstantUtil.EMPTY_TRIE_HASH;
 import static org.aion.util.string.StringUtils.getNodeIdShort;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -9,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +29,7 @@ import org.aion.log.LogEnum;
 import org.aion.mcf.blockchain.Block;
 import org.aion.mcf.blockchain.BlockHeader;
 import org.aion.p2p.INode;
+import org.aion.rlp.RLP;
 import org.aion.zero.impl.config.StatsType;
 import org.aion.p2p.IP2pMgr;
 import org.aion.util.bytes.ByteUtil;
@@ -63,6 +66,8 @@ public final class SyncMgr {
      * @implNote Should be lower than {@link SyncHeaderRequestManager#MAX_BLOCK_DIFF}.
      */
     private static final int MAX_STORAGE_DIFF = 200;
+
+    private static final byte[] EMPTY_BLOCK_BODY = RLP.encodeList(RLP.encodeList(new byte[0]));
 
     private static final Logger log = AionLoggerFactory.getLogger(LogEnum.SYNC.name());
     private static final Logger survey_log = AionLoggerFactory.getLogger(LogEnum.SURVEY.name());
@@ -292,11 +297,13 @@ public final class SyncMgr {
                     _displayId);
         }
 
-        // filter imported block headers
+        // Filter out imported block headers and keep the ones that should need bodies requests.
         List<BlockHeader> filtered = new ArrayList<>();
+        // Separate blocks that do not have bodies and can be imported directly.
+        List<Block> emptyPrefixBlocks = new ArrayList<>();
         BlockHeader prev = null;
+        boolean isPrefix = true;
         for (BlockHeader current : _headers) {
-
             // ignore this batch if any invalidated header
             if (!this.blockHeaderValidator.validate(current, log)) {
                 log.debug(
@@ -308,7 +315,7 @@ public final class SyncMgr {
                 return;
             }
 
-            // break if not consisting
+            // Break if not consistent block height order.
             if (prev != null
                     && (current.getNumber() != (prev.getNumber() + 1)
                             || !Arrays.equals(current.getParentHash(), prev.getHash()))) {
@@ -324,10 +331,30 @@ public final class SyncMgr {
 
             // add if not cached
             if (!importedBlockHashes.containsKey(ByteArrayWrapper.wrap(current.getHash()))) {
-                filtered.add(current);
+                // Check if the block has an empty body and is in the current list prefix.
+                if (isPrefix && Arrays.equals(current.getTxTrieRoot(), EMPTY_TRIE_HASH)) {
+                    Block block = BlockUtil.newBlockWithHeaderFromUnsafeSource(current, EMPTY_BLOCK_BODY);
+                    if (block == null) {
+                        log.debug("<assemble-and-validate-blocks failed to assemble empty block with hash={}>", ByteArrayWrapper.wrap(current.getHash()));
+                        break;
+                    } else {
+                        emptyPrefixBlocks.add(block);
+                    }
+                } else {
+                    if (isPrefix) {
+                        // Encountered a non-empty body block. The prefix section of empty blocks is complete.
+                        isPrefix = false;
+                    }
+                    filtered.add(current);
+                }
             }
 
             prev = current;
+        }
+
+        // Dispatch continuous list of blocks to import.
+        if (!emptyPrefixBlocks.isEmpty()) {
+            syncExecutors.execute(() -> filterBlocks(new BlocksWrapper(_nodeIdHashcode, _displayId, emptyPrefixBlocks)));
         }
 
         // NOTE: the filtered headers is still continuous
