@@ -354,6 +354,7 @@ public final class SyncMgr {
 
         // Dispatch continuous list of blocks to import.
         if (!emptyPrefixBlocks.isEmpty()) {
+            log.warn("#{} empty prefix blocks", emptyPrefixBlocks.size());
             syncExecutors.execute(() -> filterBlocks(new BlocksWrapper(_nodeIdHashcode, _displayId, emptyPrefixBlocks)));
         }
 
@@ -378,6 +379,7 @@ public final class SyncMgr {
 
         // Dispatch continuous list of blocks to import.
         if (!emptySuffixBlocks.isEmpty()) {
+            log.warn("#{} empty suffix blocks", emptySuffixBlocks.size());
             syncExecutors.execute(() -> filterBlocks(new BlocksWrapper(_nodeIdHashcode, _displayId, emptySuffixBlocks)));
         }
 
@@ -417,6 +419,7 @@ public final class SyncMgr {
                 // Log bodies request before sending the request.
                 log.debug("<get-bodies from-num={} to-num={} node={}>", firstInBatch, requestHeaders.get(requestHeaders.size() - 1).getNumber(), displayId);
                 p2pMgr.send(nodeId, displayId, new ReqBlocksBodies(requestHeaders.stream().map(k -> k.getHash()).collect(Collectors.toList())));
+                log.warn("#{} requested", requestHeaders.size());
                 stats.updateTotalRequestsToPeer(displayId, RequestType.BODIES);
                 stats.updateRequestTime(displayId, System.nanoTime(), RequestType.BODIES);
             } else {
@@ -424,7 +427,10 @@ public final class SyncMgr {
                 syncHeaderRequestManager.dropHeaders(nodeId, requestHeaders);
                 if (!filtered.isEmpty()) {
                     // Store the subset that is still useful.
+                    log.warn("#{} re-added from #{}", filtered.size(), requestHeaders.size());
                     syncHeaderRequestManager.storeHeaders(nodeId, filtered);
+                } else {
+                    log.warn("#{} dropped", requestHeaders.size());
                 }
             }
         }
